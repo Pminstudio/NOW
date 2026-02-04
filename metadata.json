@@ -1,0 +1,7 @@
+{
+  "name": "Now - Stop Scrolling, Start Pulsing",
+  "description": "Trouvez des activités locales instantanément. Now vous connecte avec des pulseurs pour vivre des expériences réelles : sport, culture, sorties et bien plus.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
