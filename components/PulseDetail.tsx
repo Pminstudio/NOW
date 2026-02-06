@@ -97,10 +97,9 @@ const PulseDetail: React.FC<PulseDetailProps> = ({
       transition={{ type: "spring", damping: 30, stiffness: 200 }}
       className="absolute inset-0 bg-white z-[60] overflow-y-auto scrollbar-hide"
     >
-      <div className="relative h-[450px]">
-        <img src={pulse.imageUrl} className="w-full h-full object-cover scale-110" alt="" />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-white to-transparent" />
+      <div className="relative h-[55vh] max-h-[450px] overflow-hidden">
+        <img src={pulse.imageUrl} className="w-full h-full object-cover" alt="" onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=800&q=80'; }} />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-white" />
         
         <div className="absolute top-8 left-8 right-8 flex justify-between items-center">
           <button
@@ -167,7 +166,7 @@ const PulseDetail: React.FC<PulseDetailProps> = ({
         </div>
       </div>
 
-      <div className="px-10 -mt-24 relative z-10 pb-40">
+      <div className="px-10 -mt-28 pt-4 relative z-10 pb-40 bg-white rounded-t-[40px]">
         <div className="bg-violet-800 text-white px-6 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] inline-block mb-6 shadow-2xl shadow-violet-900/40">
           {pulse.type}
         </div>
