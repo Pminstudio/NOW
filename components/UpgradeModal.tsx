@@ -69,6 +69,14 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({
             {/* Header */}
             <div className="bg-gradient-to-br from-violet-600 to-violet-950 p-10 text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-[url('data:image/svg+xml,...')] opacity-10" />
+              <button
+                onClick={onClose}
+                className="absolute top-6 right-6 z-20 w-10 h-10 bg-white/15 backdrop-blur-sm rounded-full flex items-center justify-center text-white/80 transition-all active:scale-90 hover:bg-white/25"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
+                  <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}

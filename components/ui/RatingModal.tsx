@@ -89,7 +89,17 @@ const RatingModal: React.FC<RatingModalProps> = ({
               </motion.div>
             ) : (
               <>
-                <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8" />
+                <div className="flex items-center justify-between mb-8">
+                  <div className="w-12 h-1.5 bg-gray-200 rounded-full" />
+                  <button
+                    onClick={onClose}
+                    className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 transition-all active:scale-90 hover:bg-gray-200"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
+                      <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
 
                 <div className="text-center mb-8">
                   <h3 className="text-3xl font-black text-violet-950 tracking-tight mb-2">
