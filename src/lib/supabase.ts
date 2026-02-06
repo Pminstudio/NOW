@@ -19,7 +19,9 @@ function getSupabaseClient(): SupabaseClient {
         persistSession: true,
         storageKey: 'now-auth',
         autoRefreshToken: true,
-        detectSessionInUrl: true
+        detectSessionInUrl: true,
+        // Bypass navigator.locks to prevent deadlock in dev (HMR/StrictMode)
+        lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
       }
     });
   }

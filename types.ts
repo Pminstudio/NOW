@@ -127,7 +127,7 @@ export function dbPulseToPulse(dbPulse: any): Pulse {
       address: dbPulse.location_address || '',
     },
     capacity: dbPulse.capacity,
-    participants: dbPulse.participant_ids || [],
+    participants: (dbPulse.participant_ids || []).map((id: unknown) => String(id)),
     imageUrl: dbPulse.image_url || '',
     price: dbPulse.price ?? undefined,
     tags: dbPulse.tags || [],

@@ -86,6 +86,15 @@ const AppContent: React.FC = () => {
     }
   }, [authLoading, profile]);
 
+  // Safety: force exit from loading screen if auth hangs (supabase-js navigator.locks deadlock)
+  useEffect(() => {
+    if (currentState !== AppState.LOADING) return;
+    const timeout = setTimeout(() => {
+      setCurrentState(profile ? AppState.MAP : AppState.ONBOARDING);
+    }, 3000);
+    return () => clearTimeout(timeout);
+  }, [currentState, profile]);
+
   const currentViewedPulse = useMemo(() => {
     return pulses.find(p => p.id === selectedPulseId) || null;
   }, [pulses, selectedPulseId]);
@@ -569,6 +578,25 @@ const AppContent: React.FC = () => {
             onPulseClick={viewPulseDetail}
             onSendMessage={() => handleSendMessageToUser(selectedPulseur.id, selectedPulseur.name)}
           />
+        )}
+
+        {currentState === AppState.DETAIL && currentViewedPulse && !currentPulseur && (
+          <motion.div
+            key="detail-loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-white z-[60] flex items-center justify-center"
+          >
+            <div className="text-center">
+              <div className="w-16 h-16 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-8 h-8 text-violet-400">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <p className="text-sm font-black text-violet-300 uppercase tracking-widest">Chargement...</p>
+            </div>
+          </motion.div>
         )}
 
         {currentState === AppState.DETAIL && currentViewedPulse && currentPulseur && (

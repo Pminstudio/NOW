@@ -13,8 +13,8 @@ interface PulseDetailProps {
   isFavorite?: boolean;
   canRate?: boolean;
   hasRated?: boolean;
-  onJoin: () => void;
-  onCancel: () => void;
+  onJoin: () => void | Promise<void>;
+  onCancel: () => void | Promise<void>;
   onBack: () => void;
   onPulseurClick: (pulseur: Pulseur) => void;
   onEdit?: () => void;
@@ -70,6 +70,8 @@ const PulseDetail: React.FC<PulseDetailProps> = ({
 }) => {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const tags = getTagsForType(pulse.type);
   const isPastPulse = new Date(pulse.startTime) < new Date();
 
@@ -304,11 +306,21 @@ const PulseDetail: React.FC<PulseDetailProps> = ({
           </div>
         ) : !isParticipating ? (
           <button
-            onClick={onJoin}
-            disabled={isPastPulse}
+            onClick={async () => {
+              if (isJoining) return;
+              setIsJoining(true);
+              try { await onJoin(); } finally { setIsJoining(false); }
+            }}
+            disabled={isPastPulse || isJoining}
             className="w-full py-7 bg-violet-800 text-white rounded-[40px] text-2xl font-black shadow-[0_20px_50px_rgba(91,33,182,0.4)] transition-all active:scale-95 transform hover:bg-violet-900 uppercase tracking-tighter disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isPastPulse ? 'PULSE TERMINÉ' : 'PULSER MAINTENANT'}
+            {isPastPulse ? 'PULSE TERMINÉ' : isJoining ? (
+              <div className="flex gap-2 justify-center">
+                <div className="w-3 h-3 bg-white rounded-full animate-bounce" />
+                <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+                <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+              </div>
+            ) : 'PULSER MAINTENANT'}
           </button>
         ) : (
           <div className="flex gap-5">
@@ -320,12 +332,21 @@ const PulseDetail: React.FC<PulseDetailProps> = ({
              </div>
              {!isPastPulse && (
                <button
-                onClick={onCancel}
-                className="px-10 py-7 bg-red-50 text-red-400 rounded-[40px] font-black transition-all hover:bg-red-500 hover:text-white active:scale-90"
+                onClick={async () => {
+                  if (isCancelling) return;
+                  setIsCancelling(true);
+                  try { await onCancel(); } finally { setIsCancelling(false); }
+                }}
+                disabled={isCancelling}
+                className="px-10 py-7 bg-red-50 text-red-400 rounded-[40px] font-black transition-all hover:bg-red-500 hover:text-white active:scale-90 disabled:opacity-50"
                >
-                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" className="w-7 h-7">
-                   <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
-                 </svg>
+                 {isCancelling ? (
+                   <div className="w-7 h-7 border-3 border-red-400 border-t-transparent rounded-full animate-spin" />
+                 ) : (
+                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" className="w-7 h-7">
+                     <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
+                   </svg>
+                 )}
                </button>
              )}
           </div>

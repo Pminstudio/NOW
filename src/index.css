@@ -26,11 +26,20 @@
 
 /* Base styles */
 @layer base {
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
   body {
     font-family: var(--font-family-sans);
     background-color: #ffffff;
     overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    height: 100%;
   }
 }
 

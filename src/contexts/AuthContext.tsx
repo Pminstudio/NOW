@@ -73,52 +73,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, fetchProfile]);
 
   useEffect(() => {
-    let isMounted = true;
+    // Initial load
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
+      setSession(initialSession);
+      setUser(initialSession?.user ?? null);
 
-    const initSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (!isMounted) return;
-
-        setSession(session);
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          const userName = session.user.user_metadata?.name;
-          const fetchedProfile = await fetchProfile(session.user.id, userName);
-          if (isMounted) {
-            setProfile(fetchedProfile);
-          }
-        }
-      } catch (err) {
-        console.error('AuthContext: Error getting session', err);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
+      if (initialSession?.user) {
+        try {
+          const fetchedProfile = await fetchProfile(initialSession.user.id, initialSession.user.user_metadata?.name);
+          setProfile(fetchedProfile);
+        } catch (err) {
+          console.error('Error fetching profile on init:', err);
         }
       }
-    };
 
-    initSession();
+      setLoading(false);
+    }).catch((err) => {
+      console.error('Error getting session:', err);
+      setLoading(false);
+    });
 
+    // Subsequent auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      async (_event, newSession) => {
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
 
-        if (event === 'SIGNED_IN' && session?.user) {
-          const userName = session.user.user_metadata?.name;
-          const fetchedProfile = await fetchProfile(session.user.id, userName);
-          setProfile(fetchedProfile);
-        } else if (event === 'SIGNED_OUT') {
+        if (newSession?.user) {
+          try {
+            const fetchedProfile = await fetchProfile(newSession.user.id, newSession.user.user_metadata?.name);
+            setProfile(fetchedProfile);
+          } catch (err) {
+            console.error('Error fetching profile on auth change:', err);
+          }
+        } else {
           setProfile(null);
         }
       }
     );
 
     return () => {
-      isMounted = false;
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
