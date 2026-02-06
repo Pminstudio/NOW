@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Pulse, Interest } from '../types';
+import { INTERESTS } from '../constants';
 import { matchPulsesByMood } from '../geminiService';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -15,18 +16,22 @@ interface MapViewProps {
   onProfileClick: () => void;
   onPulseurSpace: () => void;
   onMyPulsesClick: () => void;
+  onNotificationsClick?: () => void;
+  unreadNotifications?: number;
 }
 
 type DateFilter = string | 'any'; // Can be 'any' or 'YYYY-MM-DD'
 type TimeFilter = 'morning' | 'afternoon' | 'evening' | 'any';
 
-const MapView: React.FC<MapViewProps> = ({ 
-  pulses, 
-  userInterests, 
-  onPulseSelect, 
-  onProfileClick, 
+const MapView: React.FC<MapViewProps> = ({
+  pulses,
+  userInterests,
+  onPulseSelect,
+  onProfileClick,
   onPulseurSpace,
   onMyPulsesClick,
+  onNotificationsClick,
+  unreadNotifications = 0,
   userLocation
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -38,9 +43,15 @@ const MapView: React.FC<MapViewProps> = ({
   const [mood, setMood] = useState('');
   const [selectedDate, setSelectedDate] = useState<DateFilter>('any');
   const [selectedTime, setSelectedTime] = useState<TimeFilter>('any');
-  
+  const [selectedCategories, setSelectedCategories] = useState<Interest[]>([]);
+
   const [filteredPulseIds, setFilteredPulseIds] = useState<string[] | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
+
+  const toggleCategory = (category: Interest) => {
+    setSelectedCategories(prev =>
+      prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]
+    );
+  };
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -61,12 +72,16 @@ const MapView: React.FC<MapViewProps> = ({
       });
     }
 
+    if (selectedCategories.length > 0) {
+      list = list.filter(p => selectedCategories.includes(p.type));
+    }
+
     if (filteredPulseIds !== null) {
       list = list.filter(p => filteredPulseIds.includes(p.id));
     }
 
     return list;
-  }, [filteredPulseIds, pulses, selectedDate, selectedTime]);
+  }, [filteredPulseIds, pulses, selectedDate, selectedTime, selectedCategories]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -137,33 +152,32 @@ const MapView: React.FC<MapViewProps> = ({
     });
   }, [visiblePulses, onPulseSelect]);
 
-  const handleSearch = async () => {
-    if (mood.trim() || selectedDate !== 'any' || selectedTime !== 'any') {
-      if (mood.trim()) {
-        setIsSearching(true);
-        const matchedIds = await matchPulsesByMood(mood, pulses, userInterests);
-        setFilteredPulseIds(matchedIds);
-        setIsSearching(false);
-      }
-    } else {
+  const handleSearch = () => {
+    if (mood.trim()) {
+      const matchedIds = matchPulsesByMood(mood, pulses, userInterests);
+      setFilteredPulseIds(matchedIds.length > 0 ? matchedIds : null);
+    } else if (selectedDate === 'any' && selectedTime === 'any') {
       setFilteredPulseIds(null);
     }
     setIsModalOpen(false);
 
-    if (visiblePulses.length > 0 && mapRef.current) {
-      const latlngs = visiblePulses.map(p => [p.location.lat, p.location.lng]);
-      mapRef.current.fitBounds(latlngs, { padding: [100, 100], maxZoom: 15 });
-    }
+    setTimeout(() => {
+      if (visiblePulses.length > 0 && mapRef.current) {
+        const latlngs = visiblePulses.map(p => [p.location.lat, p.location.lng]);
+        mapRef.current.fitBounds(latlngs, { padding: [100, 100], maxZoom: 15 });
+      }
+    }, 100);
   };
 
   const resetFilters = () => {
     setFilteredPulseIds(null);
     setSelectedDate('any');
     setSelectedTime('any');
+    setSelectedCategories([]);
     setMood('');
   };
 
-  const isAnyFilterActive = filteredPulseIds !== null || selectedDate !== 'any' || selectedTime !== 'any';
+  const isAnyFilterActive = filteredPulseIds !== null || selectedDate !== 'any' || selectedTime !== 'any' || selectedCategories.length > 0;
 
   return (
     <div className="relative h-full w-full bg-[#F9F7FF] overflow-hidden">
@@ -197,14 +211,33 @@ const MapView: React.FC<MapViewProps> = ({
           </div>
         </div>
 
-        <button 
-          onClick={onPulseurSpace} 
-          className="w-14 h-14 bg-white rounded-2xl shadow-2xl flex items-center justify-center border-2 border-white active:scale-90 transition-transform group"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-7 h-7 text-violet-800 group-hover:scale-110 transition-transform">
-            <path d="M12 5v14M5 12h14" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
+        <div className="flex gap-3">
+          {onNotificationsClick && (
+            <button
+              onClick={onNotificationsClick}
+              className="relative w-14 h-14 bg-white rounded-2xl shadow-2xl flex items-center justify-center border-2 border-white active:scale-90 transition-transform group"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-6 h-6 text-violet-800 group-hover:scale-110 transition-transform">
+                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M13.73 21a2 2 0 01-3.46 0" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              {unreadNotifications > 0 && (
+                <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white">
+                  {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                </div>
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={onPulseurSpace}
+            className="w-14 h-14 bg-white rounded-2xl shadow-2xl flex items-center justify-center border-2 border-white active:scale-90 transition-transform group"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-7 h-7 text-violet-800 group-hover:scale-110 transition-transform">
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Floating Heart Button */}
@@ -230,22 +263,68 @@ const MapView: React.FC<MapViewProps> = ({
       </div>
 
       {isAnyFilterActive && (
-         <motion.button 
+         <motion.button
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           onClick={resetFilters}
           className="absolute bottom-44 left-1/2 -translate-x-1/2 z-40 bg-white/95 backdrop-blur-xl px-7 py-3.5 rounded-full shadow-2xl border border-violet-100 flex items-center gap-4 text-[9px] font-black text-violet-800 uppercase tracking-widest"
          >
            Filtres actifs
-           <div className="flex gap-1.5">
-             {selectedDate !== 'any' && <span className="bg-violet-100 px-2.5 py-1 rounded-lg">{selectedDate}</span>}
+           <div className="flex gap-1.5 flex-wrap justify-center max-w-[200px]">
+             {selectedCategories.length > 0 && (
+               <span className="bg-violet-800 text-white px-2.5 py-1 rounded-lg">
+                 {selectedCategories.length} catégorie{selectedCategories.length > 1 ? 's' : ''}
+               </span>
+             )}
+             {selectedDate !== 'any' && <span className="bg-violet-100 px-2.5 py-1 rounded-lg">{selectedDate === new Date().toISOString().split('T')[0] ? "Auj." : selectedDate}</span>}
              {selectedTime !== 'any' && <span className="bg-violet-100 px-2.5 py-1 rounded-lg">{selectedTime.toUpperCase()}</span>}
-             {filteredPulseIds !== null && <span className="bg-violet-800 text-white px-2.5 py-1 rounded-lg">IA</span>}
+             {filteredPulseIds !== null && <span className="bg-violet-600 text-white px-2.5 py-1 rounded-lg">IA</span>}
            </div>
            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" className="w-3.5 h-3.5 text-violet-300 hover:text-red-400 ml-1">
               <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
            </svg>
          </motion.button>
+      )}
+
+      {/* Empty State - No pulses */}
+      {visiblePulses.length === 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 w-[85%]"
+        >
+          <div className="bg-white/95 backdrop-blur-xl p-10 rounded-[50px] border border-violet-100 shadow-2xl text-center">
+            <div className="w-20 h-20 bg-violet-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-10 h-10 text-violet-300">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="12" cy="10" r="3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <h3 className="text-xl font-black text-violet-950 mb-2 tracking-tight italic">
+              {isAnyFilterActive ? 'Aucun résultat' : 'Pas encore de pulses'}
+            </h3>
+            <p className="text-violet-400 text-[11px] font-bold uppercase tracking-widest mb-6">
+              {isAnyFilterActive
+                ? 'Essaie d\'élargir tes critères de recherche'
+                : 'Sois le premier à créer une expérience !'}
+            </p>
+            {isAnyFilterActive ? (
+              <button
+                onClick={resetFilters}
+                className="px-8 py-4 bg-violet-100 text-violet-800 rounded-full font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all"
+              >
+                Réinitialiser les filtres
+              </button>
+            ) : (
+              <button
+                onClick={onPulseurSpace}
+                className="px-8 py-4 bg-violet-950 text-white rounded-full font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+              >
+                Créer un pulse
+              </button>
+            )}
+          </div>
+        </motion.div>
       )}
 
       {/* Mood Modal */}
@@ -348,12 +427,42 @@ const MapView: React.FC<MapViewProps> = ({
                             key={time}
                             onClick={() => setSelectedTime(time)}
                             className={`py-5 rounded-[28px] font-black text-[10px] uppercase tracking-[0.2em] transition-all border-2 ${
-                              selectedTime === time 
-                                ? 'bg-violet-950 border-violet-950 text-white shadow-2xl scale-105' 
+                              selectedTime === time
+                                ? 'bg-violet-950 border-violet-950 text-white shadow-2xl scale-105'
                                 : 'bg-white border-violet-50 text-gray-300 hover:bg-gray-50'
                             }`}
                           >
                             {time === 'any' ? 'H24' : time === 'morning' ? 'MATIN' : time === 'afternoon' ? 'APRÈM' : 'SOIR'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Categories Section */}
+                    <div className="bg-[#FDFCFF] rounded-[55px] p-10 border border-violet-50 shadow-sm">
+                      <div className="flex items-center justify-between mb-6 ml-3">
+                        <label className="block text-[11px] font-black text-violet-950/20 uppercase tracking-[0.4em]">Catégories</label>
+                        {selectedCategories.length > 0 && (
+                          <button
+                            onClick={() => setSelectedCategories([])}
+                            className="text-[9px] font-black text-violet-400 uppercase tracking-widest"
+                          >
+                            Tout effacer
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {INTERESTS.map((category) => (
+                          <button
+                            key={category}
+                            onClick={() => toggleCategory(category)}
+                            className={`px-5 py-3 rounded-2xl font-black text-[9px] uppercase tracking-widest transition-all border-2 ${
+                              selectedCategories.includes(category)
+                                ? 'bg-violet-950 border-violet-950 text-white shadow-lg scale-105'
+                                : 'bg-white border-violet-50 text-gray-400 hover:border-violet-200'
+                            }`}
+                          >
+                            {category}
                           </button>
                         ))}
                       </div>
@@ -371,25 +480,14 @@ const MapView: React.FC<MapViewProps> = ({
                       <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </button>
-                  <button 
+                  <button
                     onClick={handleSearch}
-                    disabled={isSearching}
-                    className="flex-1 py-8 bg-violet-950 text-white rounded-[40px] text-3xl font-black shadow-[0_25px_80px_rgba(76,29,149,0.5)] flex items-center justify-center gap-6 transition-all active:scale-95 disabled:opacity-50 uppercase italic tracking-tighter"
+                    className="flex-1 py-8 bg-violet-950 text-white rounded-[40px] text-3xl font-black shadow-[0_25px_80px_rgba(76,29,149,0.5)] flex items-center justify-center gap-6 transition-all active:scale-95 uppercase italic tracking-tighter"
                   >
-                    {isSearching ? (
-                      <div className="flex gap-2">
-                        <div className="w-3 h-3 bg-white rounded-full animate-bounce" />
-                        <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
-                        <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
-                      </div>
-                    ) : (
-                      <>
-                        <span>PULSER</span>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="5" className="w-8 h-8">
-                          <path d="M5 12h14m-7-7l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </>
-                    )}
+                    <span>PULSER</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="5" className="w-8 h-8">
+                      <path d="M5 12h14m-7-7l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                   </button>
                 </div>
               </div>

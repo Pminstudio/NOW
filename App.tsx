@@ -1,13 +1,30 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserProfile, Interest, Pulse, Pulseur } from './types';
-import { MOCK_PULSEURS, MOCK_PULSES } from './constants';
+import { UserProfile, Pulse, Pulseur } from './types';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { usePulses } from './src/hooks/usePulses';
+import { useProfile } from './src/hooks/useProfile';
+import { useFavorites } from './src/hooks/useFavorites';
+import { useRatings } from './src/hooks/useRatings';
+import { useNotifications } from './src/hooks/useNotifications';
+import { useConversations } from './src/hooks/useChat';
+import { useReports, ReportReason } from './src/hooks/useReports';
+import { useSubscription } from './src/hooks/useSubscription';
+import { supabase } from './src/lib/supabase';
+import { initializeCapacitor, isNative } from './src/lib/capacitor';
+import { Geolocation } from '@capacitor/geolocation';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import Onboarding from './components/Onboarding';
 import MapView from './components/MapView';
 import ProfileView from './components/ProfileView';
+import EditProfileView from './components/EditProfileView';
 import PulseDetail from './components/PulseDetail';
 import PulseurSpace from './components/PulseurSpace';
+import EditPulseView from './components/EditPulseView';
 import MyPulsesView from './components/MyPulsesView';
+import NotificationsPanel from './components/NotificationsPanel';
+import ChatView from './components/ChatView';
+import ReportModal from './components/ui/ReportModal';
+import UpgradeModal from './components/UpgradeModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 enum AppState {
@@ -15,101 +32,246 @@ enum AppState {
   MAP,
   PULSEUR_SPACE,
   PROFILE,
+  EDIT_PROFILE,
   DETAIL,
+  EDIT_PULSE,
   PULSEUR_PROFILE,
-  MY_PULSES
+  MY_PULSES,
+  CHAT,
+  LOADING
 }
 
-const App: React.FC = () => {
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [currentState, setCurrentState] = useState<AppState>(AppState.ONBOARDING);
+const AppContent: React.FC = () => {
+  const { profile, loading: authLoading, signOut, updateProfile } = useAuth();
+  const { pulses, joinPulse, leavePulse, createPulse, updatePulse, deletePulse, getCreatedPulses, searchNearby } = usePulses();
+  const { getPulseur } = useProfile();
+  const { isFavorite, toggleFavorite, favoritePulses } = useFavorites(profile?.id);
+  const { createRating } = useRatings();
+  const { notifications: appNotifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(profile?.id);
+  const { getConversationForPulse, getOrCreateDirectConversation } = useConversations(profile?.id);
+  const { submitReport, blockUser } = useReports(profile?.id);
+  const {
+    isPremium,
+    limits,
+    plans,
+    currentPlan,
+    subscription,
+    canCreatePulse,
+    createCheckoutSession,
+    createPortalSession
+  } = useSubscription(profile?.id);
+
+  const [currentState, setCurrentState] = useState<AppState>(AppState.LOADING);
   const [selectedPulseId, setSelectedPulseId] = useState<string | null>(null);
   const [selectedPulseur, setSelectedPulseur] = useState<Pulseur | null>(null);
-  const [pulses, setPulses] = useState<Pulse[]>(MOCK_PULSES);
-  const [notifications, setNotifications] = useState<string[]>([]);
-
-  // Default to Marseille center: Vieux-Port area
+  const [toastNotifications, setToastNotifications] = useState<string[]>([]);
   const [userLocation, setUserLocation] = useState({ lat: 43.2965, lng: 5.3698 });
+
+  // UI State
+  const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ type: 'pulse' | 'user'; id: string; name: string } | null>(null);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [currentConversationName, setCurrentConversationName] = useState<string>('');
+  const [chatReturnState, setChatReturnState] = useState<AppState>(AppState.DETAIL);
+
+  useEffect(() => {
+    if (!authLoading) {
+      if (profile) {
+        setCurrentState(AppState.MAP);
+      } else {
+        setCurrentState(AppState.ONBOARDING);
+      }
+    }
+  }, [authLoading, profile]);
 
   const currentViewedPulse = useMemo(() => {
     return pulses.find(p => p.id === selectedPulseId) || null;
   }, [pulses, selectedPulseId]);
 
-  // Resolve the pulseur for the current viewed pulse
-  const currentPulseur = useMemo(() => {
-    if (!currentViewedPulse) return null;
-    
-    // Check in mock pulseurs
-    const mock = MOCK_PULSEURS.find(p => p.id === currentViewedPulse.pulseurId);
-    if (mock) return mock;
-
-    // Check if it's the current user
-    if (userProfile && currentViewedPulse.pulseurId === userProfile.id) {
-      return {
-        ...userProfile,
-        rating: 5.0,
-        activePulses: pulses.filter(p => p.pulseurId === userProfile.id).map(p => p.id)
-      } as Pulseur;
-    }
-
-    return MOCK_PULSEURS[0]; // Fallback
-  }, [currentViewedPulse, userProfile, pulses]);
-
-  const userReservations = useMemo(() => {
-    if (!userProfile) return [];
-    return pulses.filter(p => p.participants.includes(userProfile.id));
-  }, [pulses, userProfile]);
+  const [currentPulseur, setCurrentPulseur] = useState<Pulseur | null>(null);
+  const [canRateCurrentPulse, setCanRateCurrentPulse] = useState(false);
+  const [hasRatedCurrentPulse, setHasRatedCurrentPulse] = useState(false);
 
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.warn("Geolocation denied, staying in Marseille.", error);
-        }
-      );
-    }
+    const fetchPulseur = async () => {
+      if (!currentViewedPulse) {
+        setCurrentPulseur(null);
+        return;
+      }
+
+      if (profile && currentViewedPulse.pulseurId === profile.id) {
+        const activePulseIds = getCreatedPulses(profile.id).map(p => p.id);
+        setCurrentPulseur({
+          ...profile,
+          rating: profile.rating ?? 5.0,
+          activePulses: activePulseIds
+        });
+        return;
+      }
+
+      const activePulseIds = getCreatedPulses(currentViewedPulse.pulseurId).map(p => p.id);
+      const pulseur = await getPulseur(currentViewedPulse.pulseurId, activePulseIds);
+      setCurrentPulseur(pulseur);
+    };
+
+    fetchPulseur();
+  }, [currentViewedPulse, profile, getPulseur, getCreatedPulses]);
+
+  // Check rating eligibility when viewing a pulse
+  useEffect(() => {
+    const checkRatingEligibility = async () => {
+      if (!currentViewedPulse || !profile) {
+        setCanRateCurrentPulse(false);
+        setHasRatedCurrentPulse(false);
+        return;
+      }
+
+      const isPastPulse = new Date(currentViewedPulse.startTime) < new Date();
+      const isParticipant = currentViewedPulse.participants.includes(profile.id);
+      const isNotOwner = currentViewedPulse.pulseurId !== profile.id;
+
+      if (!isPastPulse || !isParticipant || !isNotOwner) {
+        setCanRateCurrentPulse(false);
+        setHasRatedCurrentPulse(false);
+        return;
+      }
+
+      // Check if already rated
+      const { data } = await supabase
+        .from('ratings')
+        .select('id')
+        .eq('pulse_id', currentViewedPulse.id)
+        .eq('reviewer_id', profile.id)
+        .single();
+
+      setHasRatedCurrentPulse(!!data);
+      setCanRateCurrentPulse(!data);
+    };
+
+    checkRatingEligibility();
+  }, [currentViewedPulse, profile]);
+
+  const userReservations = useMemo(() => {
+    if (!profile) return [];
+    return pulses.filter(p => p.participants.includes(profile.id));
+  }, [pulses, profile]);
+
+  // Initialize Capacitor on mount
+  useEffect(() => {
+    initializeCapacitor();
   }, []);
 
-  const handleProfileComplete = (profile: UserProfile) => {
-    setUserProfile(profile);
+  // Get user location using Capacitor on native, fallback to browser API
+  useEffect(() => {
+    const getLocation = async () => {
+      try {
+        if (isNative()) {
+          const permission = await Geolocation.requestPermissions();
+          if (permission.location === 'granted') {
+            const position = await Geolocation.getCurrentPosition();
+            setUserLocation({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            });
+          }
+        } else if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setUserLocation({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+              });
+            },
+            (error) => {
+              console.warn("Geolocation denied, staying in Marseille.", error);
+            }
+          );
+        }
+      } catch (error) {
+        console.warn("Geolocation error, staying in Marseille.", error);
+      }
+    };
+    getLocation();
+  }, []);
+
+  const showNotification = (message: string) => {
+    setToastNotifications(prev => [...prev, message]);
+    setTimeout(() => setToastNotifications(prev => prev.slice(1)), 3000);
+  };
+
+  const handleProfileComplete = () => {
     setCurrentState(AppState.MAP);
   };
 
-  const handleJoinPulse = (pulseId: string) => {
-    setPulses(prev => prev.map(p => 
-      p.id === pulseId && userProfile 
-        ? { ...p, participants: [...new Set([...p.participants, userProfile.id])] } 
-        : p
-    ));
-    setNotifications(prev => [...prev, `Génial ! Tu pulses maintenant.`]);
-    setTimeout(() => setNotifications(prev => prev.slice(1)), 3000);
+  const handleJoinPulse = async (pulseId: string) => {
+    const { error } = await joinPulse(pulseId);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+    } else {
+      // Haptic feedback on native platforms
+      if (isNative()) {
+        Haptics.impact({ style: ImpactStyle.Medium });
+      }
+      showNotification(`Génial ! Tu pulses maintenant.`);
+    }
   };
 
-  const handleCancelPulse = (pulseId: string) => {
+  const handleCancelPulse = async (pulseId: string) => {
     const confirmCancel = window.confirm("Annuler ta participation ?");
     if (!confirmCancel) return;
 
-    setPulses(prev => prev.map(p => 
-      p.id === pulseId && userProfile 
-        ? { ...p, participants: p.participants.filter(id => id !== userProfile.id) } 
-        : p
-    ));
-    
-    setNotifications(prev => [...prev, `Participation annulée.`]);
-    setTimeout(() => setNotifications(prev => prev.slice(1)), 3000);
+    const { error } = await leavePulse(pulseId);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+    } else {
+      showNotification(`Participation annulée.`);
+    }
   };
 
-  const handleCreatePulse = (newPulse: Pulse) => {
-    setPulses(prev => [newPulse, ...prev]);
-    setCurrentState(AppState.MAP);
-    setNotifications(prev => [...prev, `Ton Pulse est lancé !`]);
-    setTimeout(() => setNotifications(prev => prev.slice(1)), 3000);
+  const handleCreatePulse = async (newPulseData: Omit<Pulse, 'id' | 'participants'>) => {
+    const { error } = await createPulse(newPulseData);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+    } else {
+      setCurrentState(AppState.MAP);
+      showNotification(`Ton Pulse est lancé !`);
+    }
+  };
+
+  // Check pulse limits before navigating to PulseurSpace
+  const handleOpenPulseurSpace = async () => {
+    const allowed = await canCreatePulse();
+    if (!allowed) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    setCurrentState(AppState.PULSEUR_SPACE);
+  };
+
+  // Handle subscription upgrade
+  const handleUpgrade = async (planId: string, billingCycle: 'monthly' | 'yearly') => {
+    const { url, error } = await createCheckoutSession(planId, billingCycle);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+      throw error;
+    }
+    if (url) {
+      window.location.href = url;
+    }
+  };
+
+  // Handle subscription management
+  const handleManageSubscription = async () => {
+    const { url, error } = await createPortalSession();
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+      return;
+    }
+    if (url) {
+      window.location.href = url;
+    }
   };
 
   const viewPulseurProfile = (pulseur: Pulseur) => {
@@ -122,10 +284,175 @@ const App: React.FC = () => {
     setCurrentState(AppState.DETAIL);
   };
 
+  const handleEditPulse = (pulse: Pulse) => {
+    setSelectedPulseId(pulse.id);
+    setCurrentState(AppState.EDIT_PULSE);
+  };
+
+  const handleUpdatePulse = async (pulseId: string, updates: Partial<Omit<Pulse, 'id' | 'participants' | 'pulseurId'>>) => {
+    const { error } = await updatePulse(pulseId, updates);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+      return { error };
+    }
+    if (isNative()) {
+      Haptics.impact({ style: ImpactStyle.Light });
+    }
+    showNotification('Pulse mis à jour !');
+    return { error: null };
+  };
+
+  const handleDeletePulse = async (pulseId: string) => {
+    const { error } = await deletePulse(pulseId);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+      return { error };
+    }
+    showNotification('Pulse supprimé.');
+    setCurrentState(AppState.MAP);
+    return { error: null };
+  };
+
+  const handleToggleFavorite = async (pulseId: string) => {
+    const { error, isFavorite: isNowFavorite } = await toggleFavorite(pulseId);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+    } else {
+      if (isNative()) {
+        Haptics.impact({ style: ImpactStyle.Light });
+      }
+      showNotification(isNowFavorite ? 'Ajouté aux favoris' : 'Retiré des favoris');
+    }
+  };
+
+  const handleRatePulse = async (rating: number, comment: string) => {
+    if (!currentViewedPulse || !profile) return;
+
+    const { error } = await createRating(
+      currentViewedPulse.id,
+      profile.id,
+      currentViewedPulse.pulseurId,
+      rating,
+      comment
+    );
+
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+      throw error;
+    }
+
+    if (isNative()) {
+      Haptics.impact({ style: ImpactStyle.Medium });
+    }
+    showNotification('Merci pour ton avis !');
+    setHasRatedCurrentPulse(true);
+    setCanRateCurrentPulse(false);
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    setCurrentState(AppState.ONBOARDING);
+  };
+
+  // Open chat for current pulse
+  const handleOpenChat = async () => {
+    if (!currentViewedPulse) return;
+
+    const conversation = await getConversationForPulse(currentViewedPulse.id);
+    if (conversation) {
+      setCurrentConversationId(conversation.id);
+      setCurrentConversationName(currentViewedPulse.title);
+      setChatReturnState(AppState.DETAIL);
+      setCurrentState(AppState.CHAT);
+    } else {
+      showNotification('Chat non disponible');
+    }
+  };
+
+  // Open direct chat with a user
+  const handleSendMessageToUser = async (userId: string, userName: string) => {
+    const { conversation, error } = await getOrCreateDirectConversation(userId);
+    if (error || !conversation) {
+      showNotification('Impossible de créer la conversation');
+      return;
+    }
+    setCurrentConversationId(conversation.id);
+    setCurrentConversationName(userName);
+    setChatReturnState(AppState.PULSEUR_PROFILE);
+    setCurrentState(AppState.CHAT);
+  };
+
+  // Handle notification click
+  const handleNotificationClick = (notification: any) => {
+    markAsRead(notification.id);
+
+    // Navigate based on notification type
+    if (notification.data?.pulse_id) {
+      const pulse = pulses.find(p => p.id === notification.data.pulse_id);
+      if (pulse) {
+        viewPulseDetail(pulse);
+      }
+    } else if (notification.data?.conversation_id) {
+      setCurrentConversationId(notification.data.conversation_id);
+      setCurrentConversationName('Conversation');
+      setChatReturnState(AppState.MAP);
+      setCurrentState(AppState.CHAT);
+    }
+
+    setShowNotificationsPanel(false);
+  };
+
+  // Handle report
+  const handleReport = (type: 'pulse' | 'user', id: string, name: string) => {
+    setReportTarget({ type, id, name });
+    setShowReportModal(true);
+  };
+
+  const handleSubmitReport = async (reason: ReportReason, description: string) => {
+    if (!reportTarget) return;
+
+    const { error } = await submitReport(reportTarget.type, reportTarget.id, reason, description);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+      throw error;
+    }
+
+    if (isNative()) {
+      Haptics.impact({ style: ImpactStyle.Medium });
+    }
+  };
+
+  const handleBlockUser = async () => {
+    if (!reportTarget || reportTarget.type !== 'user') return;
+
+    const { error } = await blockUser(reportTarget.id);
+    if (error) {
+      showNotification(`Erreur: ${error.message}`);
+    } else {
+      showNotification('Utilisateur bloqué');
+    }
+  };
+
+  if (currentState === AppState.LOADING) {
+    return (
+      <div className="h-screen w-full bg-violet-950 flex items-center justify-center max-w-md mx-auto">
+        <div className="text-center">
+          <h1 className="text-6xl font-black text-white tracking-tighter italic">NOW.</h1>
+          <div className="mt-8 flex gap-2 justify-center">
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce" />
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+            <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative h-screen w-full bg-white overflow-hidden max-w-md mx-auto shadow-2xl border-x border-gray-100">
+    <div className="relative h-screen w-full bg-white overflow-hidden max-w-md mx-auto shadow-2xl border-x border-gray-100 safe-area-top safe-area-bottom">
+      {/* Toast Notifications */}
       <AnimatePresence>
-        {notifications.map((notif, i) => (
+        {toastNotifications.map((notif, i) => (
           <motion.div
             key={i}
             initial={{ y: -50, opacity: 0, scale: 0.9 }}
@@ -138,6 +465,39 @@ const App: React.FC = () => {
         ))}
       </AnimatePresence>
 
+      {/* Notifications Panel */}
+      <NotificationsPanel
+        isOpen={showNotificationsPanel}
+        notifications={appNotifications}
+        onClose={() => setShowNotificationsPanel(false)}
+        onNotificationClick={handleNotificationClick}
+        onMarkAllRead={markAllAsRead}
+      />
+
+      {/* Report Modal */}
+      {reportTarget && (
+        <ReportModal
+          isOpen={showReportModal}
+          reportedType={reportTarget.type}
+          reportedName={reportTarget.name}
+          onSubmit={handleSubmitReport}
+          onBlock={reportTarget.type === 'user' ? handleBlockUser : undefined}
+          onClose={() => {
+            setShowReportModal(false);
+            setReportTarget(null);
+          }}
+        />
+      )}
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        plans={plans}
+        currentPlanId={currentPlan?.id || 'free'}
+        onSelectPlan={handleUpgrade}
+        onClose={() => setShowUpgradeModal(false)}
+      />
+
       <AnimatePresence mode="wait">
         {currentState === AppState.ONBOARDING && (
           <Onboarding key="onboarding" onComplete={handleProfileComplete} />
@@ -148,32 +508,54 @@ const App: React.FC = () => {
             key="map"
             pulses={pulses}
             onPulseSelect={viewPulseDetail}
-            userInterests={userProfile?.interests || []}
+            userInterests={profile?.interests || []}
             userLocation={userLocation}
             onProfileClick={() => setCurrentState(AppState.PROFILE)}
-            onPulseurSpace={() => setCurrentState(AppState.PULSEUR_SPACE)}
+            onPulseurSpace={handleOpenPulseurSpace}
             onMyPulsesClick={() => setCurrentState(AppState.MY_PULSES)}
+            onNotificationsClick={() => setShowNotificationsPanel(true)}
+            unreadNotifications={unreadCount}
           />
         )}
 
-        {currentState === AppState.PROFILE && userProfile && (
+        {currentState === AppState.PROFILE && profile && (
           <ProfileView
             key="profile"
-            profile={userProfile}
+            profile={profile}
+            pulses={pulses}
             isCurrentUser={true}
             onBack={() => setCurrentState(AppState.MAP)}
             onPulseClick={viewPulseDetail}
             onReservationsClick={() => setCurrentState(AppState.MY_PULSES)}
+            onSignOut={handleSignOut}
+            onEditProfile={() => setCurrentState(AppState.EDIT_PROFILE)}
+            subscription={subscription}
+            currentPlan={currentPlan}
+            limits={limits}
+            isPremium={isPremium}
+            onUpgrade={() => setShowUpgradeModal(true)}
+            onManageSubscription={handleManageSubscription}
           />
         )}
 
-        {currentState === AppState.MY_PULSES && userProfile && (
+        {currentState === AppState.EDIT_PROFILE && profile && (
+          <EditProfileView
+            key="edit-profile"
+            profile={profile}
+            onSave={updateProfile}
+            onBack={() => setCurrentState(AppState.PROFILE)}
+          />
+        )}
+
+        {currentState === AppState.MY_PULSES && profile && (
           <MyPulsesView
             key="my-pulses"
             reservations={userReservations}
+            favorites={favoritePulses}
             onBack={() => setCurrentState(AppState.MAP)}
             onPulseClick={viewPulseDetail}
             onCancelPulse={handleCancelPulse}
+            onRemoveFavorite={(pulseId) => handleToggleFavorite(pulseId)}
           />
         )}
 
@@ -181,9 +563,11 @@ const App: React.FC = () => {
           <ProfileView
             key="pulseur-profile"
             profile={selectedPulseur}
-            isCurrentUser={userProfile?.id === selectedPulseur.id}
+            pulses={pulses}
+            isCurrentUser={profile?.id === selectedPulseur.id}
             onBack={() => setCurrentState(AppState.DETAIL)}
             onPulseClick={viewPulseDetail}
+            onSendMessage={() => handleSendMessageToUser(selectedPulseur.id, selectedPulseur.name)}
           />
         )}
 
@@ -192,24 +576,68 @@ const App: React.FC = () => {
             key="detail"
             pulse={currentViewedPulse}
             pulseur={currentPulseur}
-            isParticipating={currentViewedPulse.participants.includes(userProfile?.id || '')}
+            isParticipating={currentViewedPulse.participants.includes(profile?.id || '')}
+            isOwner={currentViewedPulse.pulseurId === profile?.id}
+            isFavorite={isFavorite(currentViewedPulse.id)}
+            canRate={canRateCurrentPulse}
+            hasRated={hasRatedCurrentPulse}
             onJoin={() => handleJoinPulse(currentViewedPulse.id)}
             onCancel={() => handleCancelPulse(currentViewedPulse.id)}
             onBack={() => setCurrentState(AppState.MAP)}
             onPulseurClick={viewPulseurProfile}
+            onEdit={() => handleEditPulse(currentViewedPulse)}
+            onToggleFavorite={() => handleToggleFavorite(currentViewedPulse.id)}
+            onRate={handleRatePulse}
+            onShareSuccess={() => showNotification('Lien copié !')}
+            onShareError={(error) => showNotification(`Erreur: ${error}`)}
+            onOpenChat={handleOpenChat}
+            onReport={() => handleReport('pulse', currentViewedPulse.id, currentViewedPulse.title)}
+            onReportUser={() => handleReport('user', currentPulseur.id, currentPulseur.name)}
           />
         )}
 
-        {currentState === AppState.PULSEUR_SPACE && userProfile && (
+        {currentState === AppState.CHAT && currentConversationId && profile && (
+          <ChatView
+            key="chat"
+            conversationId={currentConversationId}
+            conversationName={currentConversationName}
+            userId={profile.id}
+            onBack={() => setCurrentState(chatReturnState)}
+          />
+        )}
+
+        {currentState === AppState.PULSEUR_SPACE && profile && (
           <PulseurSpace
             key="pulseur-space"
-            user={userProfile}
+            user={profile}
             onCreate={handleCreatePulse}
             onBack={() => setCurrentState(AppState.MAP)}
+            currentPulseCount={getCreatedPulses(profile.id).length}
+            maxPulses={limits.maxActivePulses}
+            isPremium={isPremium}
+            onUpgrade={() => setShowUpgradeModal(true)}
+          />
+        )}
+
+        {currentState === AppState.EDIT_PULSE && currentViewedPulse && profile && currentViewedPulse.pulseurId === profile.id && (
+          <EditPulseView
+            key="edit-pulse"
+            pulse={currentViewedPulse}
+            onSave={handleUpdatePulse}
+            onDelete={handleDeletePulse}
+            onBack={() => setCurrentState(AppState.DETAIL)}
           />
         )}
       </AnimatePresence>
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 };
 
