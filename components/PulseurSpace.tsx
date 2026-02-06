@@ -4,11 +4,13 @@ import { INTERESTS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import ImagePicker from './ui/ImagePicker';
 import PulseLimitBanner from './ui/PulseLimitBanner';
+import LocationPicker from './ui/LocationPicker';
 
 interface PulseurSpaceProps {
   user: UserProfile;
   onBack: () => void;
   onCreate: (pulse: Omit<Pulse, 'id' | 'participants'>) => void;
+  userLocation: { lat: number; lng: number };
   // Subscription limits
   currentPulseCount?: number;
   maxPulses?: number;
@@ -30,6 +32,7 @@ const PulseurSpace: React.FC<PulseurSpaceProps> = ({
   user,
   onBack,
   onCreate,
+  userLocation,
   currentPulseCount = 0,
   maxPulses = -1,
   isPremium = false,
@@ -43,6 +46,11 @@ const PulseurSpace: React.FC<PulseurSpaceProps> = ({
   const [isPaid, setIsPaid] = useState(false);
   const [selectedVibes, setSelectedVibes] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState(PRESET_IMAGES['Sport']);
+  const [location, setLocation] = useState<{ lat: number; lng: number; address: string }>({
+    lat: userLocation.lat,
+    lng: userLocation.lng,
+    address: '',
+  });
 
   // Date/time - default to 1 hour from now
   const getDefaultDateTime = () => {
@@ -98,7 +106,7 @@ const PulseurSpace: React.FC<PulseurSpaceProps> = ({
       description,
       pulseurId: user.id,
       startTime: selectedDate.toISOString(),
-      location: { lat: 43.2965, lng: 5.3698, address: "Marseille, Centre-Ville" },
+      location,
       capacity,
       imageUrl,
       price: isPaid ? price : 0,
@@ -238,10 +246,19 @@ const PulseurSpace: React.FC<PulseurSpaceProps> = ({
             </div>
           </section>
 
+          {/* Location */}
+          <section>
+            <label className="block text-[10px] font-black text-violet-900/30 uppercase mb-5 tracking-[0.3em] ml-4">Où ça pulse ?</label>
+            <LocationPicker
+              onLocationSelected={setLocation}
+              userLocation={userLocation}
+            />
+          </section>
+
           {/* Classification */}
           <section>
             <label className="block text-[10px] font-black text-violet-900/30 uppercase mb-6 tracking-[0.3em] ml-4">Classification & Vibes</label>
-            <div className="flex gap-3 overflow-x-auto scrollbar-hide py-2 px-1">
+            <div className="-mx-8 px-8 flex gap-3 overflow-x-auto scrollbar-hide py-2" style={{ touchAction: 'pan-x' }}>
               {INTERESTS.map(i => (
                 <button
                   key={i}
@@ -255,6 +272,7 @@ const PulseurSpace: React.FC<PulseurSpaceProps> = ({
                   {i}
                 </button>
               ))}
+              <div className="flex-shrink-0 w-4" />
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2">

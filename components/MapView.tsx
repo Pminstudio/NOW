@@ -12,6 +12,7 @@ interface MapViewProps {
   pulses: Pulse[];
   userLocation: { lat: number; lng: number };
   userInterests: Interest[];
+  userAvatar?: string;
   onPulseSelect: (pulse: Pulse) => void;
   onProfileClick: () => void;
   onPulseurSpace: () => void;
@@ -32,7 +33,8 @@ const MapView: React.FC<MapViewProps> = ({
   onMyPulsesClick,
   onNotificationsClick,
   unreadNotifications = 0,
-  userLocation
+  userLocation,
+  userAvatar
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -190,7 +192,7 @@ const MapView: React.FC<MapViewProps> = ({
             onClick={onProfileClick} 
             className="w-14 h-14 rounded-2xl overflow-hidden shadow-2xl border-2 border-white bg-white active:scale-90 transition-transform"
           >
-            <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150" className="w-full h-full object-cover" />
+            <img src={userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=default`} className="w-full h-full object-cover" />
           </button>
           
           <button 
@@ -366,9 +368,20 @@ const MapView: React.FC<MapViewProps> = ({
               <div className="bg-white rounded-t-[80px] pt-24 pb-12 px-8 shadow-[0_-30px_100px_rgba(46,16,101,0.25)] overflow-y-auto scrollbar-hide relative z-10">
                 {/* Header Decoration */}
                 <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-violet-50/40 to-transparent pointer-events-none rounded-t-[80px]" />
-                
+
                 <div className="text-center mb-12 relative z-20">
-                  <div className="w-12 h-1.5 bg-gray-100 rounded-full mx-auto mb-10" />
+                  <div className="flex items-center justify-between mb-10">
+                    <div className="w-10" />
+                    <div className="w-12 h-1.5 bg-gray-100 rounded-full" />
+                    <button
+                      onClick={() => setIsModalOpen(false)}
+                      className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 transition-all active:scale-90 hover:bg-gray-200"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
+                        <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                  </div>
                   <h2 className="text-6xl font-black text-gray-900 tracking-tighter uppercase italic leading-none">Ton Mood.</h2>
                   <p className="text-violet-400 font-bold uppercase text-[11px] tracking-[0.5em] mt-4 opacity-70">Laisse Now guider tes envies.</p>
                 </div>

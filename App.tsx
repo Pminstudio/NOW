@@ -43,7 +43,7 @@ enum AppState {
 
 const AppContent: React.FC = () => {
   const { profile, loading: authLoading, signOut, updateProfile } = useAuth();
-  const { pulses, joinPulse, leavePulse, createPulse, updatePulse, deletePulse, getCreatedPulses, searchNearby } = usePulses();
+  const { pulses, joinPulse, leavePulse, createPulse, updatePulse, deletePulse, getCreatedPulses, searchNearby, refreshPulses } = usePulses();
   const { getPulseur } = useProfile();
   const { isFavorite, toggleFavorite, favoritePulses } = useFavorites(profile?.id);
   const { createRating } = useRatings();
@@ -219,6 +219,7 @@ const AppContent: React.FC = () => {
     if (error) {
       showNotification(`Erreur: ${error.message}`);
     } else {
+      await refreshPulses();
       // Haptic feedback on native platforms
       if (isNative()) {
         Haptics.impact({ style: ImpactStyle.Medium });
@@ -235,6 +236,7 @@ const AppContent: React.FC = () => {
     if (error) {
       showNotification(`Erreur: ${error.message}`);
     } else {
+      await refreshPulses();
       showNotification(`Participation annulée.`);
     }
   };
@@ -359,7 +361,11 @@ const AppContent: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    await signOut();
+    try {
+      await signOut();
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
     setCurrentState(AppState.ONBOARDING);
   };
 
@@ -519,6 +525,7 @@ const AppContent: React.FC = () => {
             onPulseSelect={viewPulseDetail}
             userInterests={profile?.interests || []}
             userLocation={userLocation}
+            userAvatar={profile?.avatar}
             onProfileClick={() => setCurrentState(AppState.PROFILE)}
             onPulseurSpace={handleOpenPulseurSpace}
             onMyPulsesClick={() => setCurrentState(AppState.MY_PULSES)}
@@ -544,6 +551,7 @@ const AppContent: React.FC = () => {
             isPremium={isPremium}
             onUpgrade={() => setShowUpgradeModal(true)}
             onManageSubscription={handleManageSubscription}
+            onUpdateProfile={updateProfile}
           />
         )}
 
@@ -577,51 +585,52 @@ const AppContent: React.FC = () => {
             onBack={() => setCurrentState(AppState.DETAIL)}
             onPulseClick={viewPulseDetail}
             onSendMessage={() => handleSendMessageToUser(selectedPulseur.id, selectedPulseur.name)}
+            onUpdateProfile={profile?.id === selectedPulseur.id ? updateProfile : undefined}
           />
         )}
 
-        {currentState === AppState.DETAIL && currentViewedPulse && !currentPulseur && (
-          <motion.div
-            key="detail-loading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-white z-[60] flex items-center justify-center"
-          >
-            <div className="text-center">
-              <div className="w-16 h-16 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-8 h-8 text-violet-400">
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+        {currentState === AppState.DETAIL && currentViewedPulse && (
+          currentPulseur ? (
+            <PulseDetail
+              key="detail"
+              pulse={currentViewedPulse}
+              pulseur={currentPulseur}
+              isParticipating={currentViewedPulse.participants.includes(profile?.id || '')}
+              isOwner={currentViewedPulse.pulseurId === profile?.id}
+              isFavorite={isFavorite(currentViewedPulse.id)}
+              canRate={canRateCurrentPulse}
+              hasRated={hasRatedCurrentPulse}
+              onJoin={() => handleJoinPulse(currentViewedPulse.id)}
+              onCancel={() => handleCancelPulse(currentViewedPulse.id)}
+              onBack={() => setCurrentState(AppState.MAP)}
+              onPulseurClick={viewPulseurProfile}
+              onEdit={() => handleEditPulse(currentViewedPulse)}
+              onToggleFavorite={() => handleToggleFavorite(currentViewedPulse.id)}
+              onRate={handleRatePulse}
+              onShareSuccess={() => showNotification('Lien copié !')}
+              onShareError={(error) => showNotification(`Erreur: ${error}`)}
+              onOpenChat={handleOpenChat}
+              onReport={() => handleReport('pulse', currentViewedPulse.id, currentViewedPulse.title)}
+              onReportUser={() => handleReport('user', currentPulseur.id, currentPulseur.name)}
+            />
+          ) : (
+            <motion.div
+              key="detail"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-white z-[60] flex items-center justify-center"
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-8 h-8 text-violet-400">
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <p className="text-sm font-black text-violet-300 uppercase tracking-widest">Chargement...</p>
               </div>
-              <p className="text-sm font-black text-violet-300 uppercase tracking-widest">Chargement...</p>
-            </div>
-          </motion.div>
-        )}
-
-        {currentState === AppState.DETAIL && currentViewedPulse && currentPulseur && (
-          <PulseDetail
-            key="detail"
-            pulse={currentViewedPulse}
-            pulseur={currentPulseur}
-            isParticipating={currentViewedPulse.participants.includes(profile?.id || '')}
-            isOwner={currentViewedPulse.pulseurId === profile?.id}
-            isFavorite={isFavorite(currentViewedPulse.id)}
-            canRate={canRateCurrentPulse}
-            hasRated={hasRatedCurrentPulse}
-            onJoin={() => handleJoinPulse(currentViewedPulse.id)}
-            onCancel={() => handleCancelPulse(currentViewedPulse.id)}
-            onBack={() => setCurrentState(AppState.MAP)}
-            onPulseurClick={viewPulseurProfile}
-            onEdit={() => handleEditPulse(currentViewedPulse)}
-            onToggleFavorite={() => handleToggleFavorite(currentViewedPulse.id)}
-            onRate={handleRatePulse}
-            onShareSuccess={() => showNotification('Lien copié !')}
-            onShareError={(error) => showNotification(`Erreur: ${error}`)}
-            onOpenChat={handleOpenChat}
-            onReport={() => handleReport('pulse', currentViewedPulse.id, currentViewedPulse.title)}
-            onReportUser={() => handleReport('user', currentPulseur.id, currentPulseur.name)}
-          />
+            </motion.div>
+          )
         )}
 
         {currentState === AppState.CHAT && currentConversationId && profile && (
@@ -640,6 +649,7 @@ const AppContent: React.FC = () => {
             user={profile}
             onCreate={handleCreatePulse}
             onBack={() => setCurrentState(AppState.MAP)}
+            userLocation={userLocation}
             currentPulseCount={getCreatedPulses(profile.id).length}
             maxPulses={limits.maxActivePulses}
             isPremium={isPremium}
@@ -654,6 +664,7 @@ const AppContent: React.FC = () => {
             onSave={handleUpdatePulse}
             onDelete={handleDeletePulse}
             onBack={() => setCurrentState(AppState.DETAIL)}
+            userLocation={userLocation}
           />
         )}
       </AnimatePresence>

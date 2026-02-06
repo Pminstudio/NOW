@@ -3,12 +3,14 @@ import { Pulse, Interest } from '../types';
 import { INTERESTS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import ImagePicker from './ui/ImagePicker';
+import LocationPicker from './ui/LocationPicker';
 
 interface EditPulseViewProps {
   pulse: Pulse;
   onSave: (pulseId: string, updates: Partial<Omit<Pulse, 'id' | 'participants' | 'pulseurId'>>) => Promise<{ error: Error | null }>;
   onDelete: (pulseId: string) => Promise<{ error: Error | null }>;
   onBack: () => void;
+  userLocation: { lat: number; lng: number };
 }
 
 const VIBES = ['Chill', 'Intense', 'Social', 'Culturel', 'Sportif', 'Zen', 'Afterwork', 'Nocturne'];
@@ -21,7 +23,7 @@ const PRESET_IMAGES: Record<string, string> = {
   'Action': 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80'
 };
 
-const EditPulseView: React.FC<EditPulseViewProps> = ({ pulse, onSave, onDelete, onBack }) => {
+const EditPulseView: React.FC<EditPulseViewProps> = ({ pulse, onSave, onDelete, onBack, userLocation }) => {
   const [title, setTitle] = useState(pulse.title);
   const [type, setType] = useState<Interest>(pulse.type);
   const [description, setDescription] = useState(pulse.description);
@@ -30,6 +32,7 @@ const EditPulseView: React.FC<EditPulseViewProps> = ({ pulse, onSave, onDelete, 
   const [isPaid, setIsPaid] = useState((pulse.price || 0) > 0);
   const [selectedVibes, setSelectedVibes] = useState<string[]>(pulse.tags || []);
   const [imageUrl, setImageUrl] = useState(pulse.imageUrl);
+  const [location, setLocation] = useState(pulse.location);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -56,6 +59,7 @@ const EditPulseView: React.FC<EditPulseViewProps> = ({ pulse, onSave, onDelete, 
       description,
       capacity,
       imageUrl,
+      location,
       price: isPaid ? price : 0,
       tags: selectedVibes
     };
@@ -139,9 +143,18 @@ const EditPulseView: React.FC<EditPulseViewProps> = ({ pulse, onSave, onDelete, 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-[50px] p-10 w-full max-w-sm text-center"
+              className="bg-white rounded-[50px] p-10 w-full max-w-sm text-center relative"
               onClick={e => e.stopPropagation()}
             >
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 transition-all active:scale-90 hover:bg-gray-200"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
+                  <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
               <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-10 h-10 text-red-400">
                   <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeLinecap="round" strokeLinejoin="round" />
@@ -252,6 +265,16 @@ const EditPulseView: React.FC<EditPulseViewProps> = ({ pulse, onSave, onDelete, 
               />
             </div>
           </div>
+
+          {/* Location */}
+          <section>
+            <label className="block text-[10px] font-black text-violet-900/30 uppercase mb-5 tracking-[0.3em] ml-4">Lieu du Pulse</label>
+            <LocationPicker
+              onLocationSelected={setLocation}
+              initialLocation={pulse.location}
+              userLocation={userLocation}
+            />
+          </section>
 
           {/* Classification */}
           <section>

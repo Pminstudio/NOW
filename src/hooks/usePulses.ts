@@ -212,6 +212,18 @@ export function usePulses(): UsePulsesReturn {
     }
 
     try {
+      // Check if already participating
+      const { data: existing } = await supabase
+        .from('pulse_participants')
+        .select('id')
+        .eq('pulse_id', pulseId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existing) {
+        return { error: new Error('Tu participes déjà à ce pulse') };
+      }
+
       const { error: insertError } = await supabase
         .from('pulse_participants')
         .insert({
